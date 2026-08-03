@@ -1,0 +1,4 @@
+groq
+PyGithub
+pydantic>=2.0
+python-dotenv
