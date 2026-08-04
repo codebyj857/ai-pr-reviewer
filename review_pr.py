@@ -124,7 +124,7 @@ def process_pr_review(diff_text: str) -> PRReviewResult | None:
 
     try:
         response = groq_client.chat.completions.create(
-            model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+            model=os.getenv("GROQ_MODEL", "llama-3.3-70b-specdec"),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Review this PR diff:\n\n{diff_text}"}
