@@ -1,9 +1,10 @@
 import json
 import os
+import re
 import sys
 from typing import List
 from dotenv import load_dotenv
-from github import Github
+from github import Auth, Github
 from groq import Groq
 from pydantic import BaseModel, Field
 
@@ -31,7 +32,18 @@ if not groq_api_key:
     print("Error: GROQ_API_KEY is missing from environment variables.")
     sys.exit(1)
 
-groq_client = Groq(api_key=groq_api_key)
+# Added timeout and retries to prevent connection blips
+groq_client = Groq(
+    api_key=groq_api_key,
+    timeout=30.0,
+    max_retries=2,
+)
+
+def clean_json_response(raw_text: str) -> str:
+    """Strips Markdown backticks and extracts pure JSON text."""
+    cleaned = re.sub(r"^```(?:json)?\s*", "", raw_text.strip(), flags=re.MULTILINE)
+    cleaned = re.sub(r"\s*```$", "", cleaned, flags=re.MULTILINE)
+    return cleaned.strip()
 
 def run_review():
     # Local mock mode for safe offline testing
@@ -55,8 +67,9 @@ def run_review():
             print("Inline Comments Generated:", len(review_data.inline_comments))
         return
 
-    # Production GitHub Actions mode
-    gh = Github(github_token)
+    # Production GitHub Actions mode (using Auth.Token to avoid deprecation warning)
+    auth = Auth.Token(github_token)
+    gh = Github(auth=auth)
     repo = gh.get_repo(repo_name)
     pr = repo.get_pull(int(pr_number_str))
 
@@ -99,7 +112,7 @@ def run_review():
         try:
             # Submits a formal review with line-by-line inline annotations
             pr.create_review(
-                body="🤖 **Inline Code Analysis & Fixes**",
+                body="**Inline Code Analysis & Fixes**",
                 event="COMMENT",
                 comments=comments_payload
             )
@@ -134,7 +147,8 @@ def process_pr_review(diff_text: str) -> PRReviewResult | None:
         )
 
         raw_json = response.choices[0].message.content
-        return PRReviewResult.model_validate_json(raw_json)
+        cleaned_json = clean_json_response(raw_json)
+        return PRReviewResult.model_validate_json(cleaned_json)
 
     except Exception as e:
         print(f"Error during AI model processing or schema validation: {e}")
@@ -143,7 +157,7 @@ def process_pr_review(diff_text: str) -> PRReviewResult | None:
 def format_github_comment(review: PRReviewResult) -> str:
     issues_markdown = "\n".join([f"- {issue}" for issue in review.key_issues]) if review.key_issues else "- None identified."
     
-    return f"""## 🤖 AI Code Review Summary
+    return f"""## AI Code Review Summary
 
 **Overall Readiness Score:** `{review.overall_score}/10`
 
